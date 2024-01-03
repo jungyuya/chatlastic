@@ -1,0 +1,21 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.478.0",
+    "aws-sdk": "^2.1525.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "moment-timezone": "^0.5.43",
+    "openai": "^4.24.0",
+    "serverless-http": "^3.2.0"
+  }
+}
