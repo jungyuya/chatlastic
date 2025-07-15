@@ -1,119 +1,104 @@
-// imports 
+// index.js (수정된 최종 버전)
 import express from 'express';
-import OpenAI from 'openai';
-import cors from 'cors'; 
+import cors from 'cors';
 import serverless from 'serverless-http';
 import { DynamoDBClient, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { GoogleGenerativeAI } from "@google/generative-ai"; // 1. Gemini SDK 임포트
 
-// 설정
+// --- 설정 ---
 const app = express();
 
-const DEFAULT_MESSAGE = "죄송합니다. 제대로된 응답을 생성하지 못했습니다."  
+// 2. API 키를 환경 변수에서 안전하게 불러오기
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-// OpenAI 클라이언트 생성 
-const apiKey = "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";
-const openai = new OpenAI({ key: apiKey });
+const dynamoDB = new DynamoDBClient({ region: process.env.AWS_REGION });
 
-// DynamoDB 클라이언트 생성
-const dynamoDB = new DynamoDBClient({ region: 'ap-northeast-2' });
-
-// CORS 설정
-let corsOptions = { 
-  origin: 'https://chatdoge-soldesk.pages.dev', 
-  credentials: true, 
-};
-app.use(cors(corsOptions));
-
+app.use(cors()); // CORS는 Serverless.yml에서 더 안전하게 제어
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// 메인 기능 구현
-app.post('/chatDogeFunction', async function (req, res) {
+// --- 메인 기능 ---
+app.post('/chat', async function (req, res) {
+    try {
+        // 3. userId를 요청 본문에서 받도록 수정
+        const { userId, myDateTime, userMessages, assistantMessages } = req.body;
 
-  // 데이터 유효성 검사
-  if(!req.body.myDateTime) {
-    return res.status(400).send("myDateTime is required");
-  }  
+        if (!userId || !myDateTime) {
+            return res.status(400).send("userId and myDateTime are required");
+        }
 
-  try {
+        const chatHistory = processMessages(myDateTime, userMessages, assistantMessages);
+        
+        // --- Gemini 로직 ---
+        const chat = model.startChat({
+            history: chatHistory.slice(0, -1), // 마지막 사용자 메시지를 제외하고 히스토리로 전달
+            generationConfig: {
+                maxOutputTokens: 1000,
+            },
+        });
+        
+        const lastUserMessage = chatHistory[chatHistory.length - 1].parts[0].text;
+        const result = await chat.sendMessage(lastUserMessage);
+        const response = result.response;
+        const assistantResponse = response.text();
 
-    const { myDateTime, userMessages, assistantMessages } = req.body;
-
-    // OpenAI 로직
-    const messages = processMessages(myDateTime, userMessages, assistantMessages);
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: messages,
-    });
-
-    // Assistant의 응답 메시지 추출
-    let chatDogeFunction = '기본 응답';
-    if (completion.choices && completion.choices.length > 0){
-      chatDogeFunction = completion.choices[0]?.message?.content || '기본 응답';
-    }
-
-    // DynamoDB 저장
-    const currentTime = new Date().toISOString(); // 현재 시간을 ISO 8601 형식으로 저장
-    if(chatDogeFunction && myDateTime) {
-      const params = {
-        TableName: 'chatDogeDB',
-        Item: {
-          chatDogesoldesk: { S: 'chatDogesoldesk' },
-          userId: { S: 'unique-user-id' },
-          message: { S: chatDogeFunction || '' },
-          myDateTime: { S: (myDateTime !== undefined && typeof myDateTime === 'string') ? myDateTime : '' },
-          chatTime: { S: currentTime }, // 채팅 시간 추가
-          userMessage: { S: JSON.stringify(userMessages) || '' }, // 유저 메시지 추가
-          assistantMessage: { S: JSON.stringify(assistantMessages) || '' }, // 어시스턴트 메시지 추가
-          conversation: { S: JSON.stringify(messages) || '' }, // 대화 내용 추가
-        },
-      };
-      try {
+        // --- DynamoDB 저장 로직 수정 ---
+        const timestamp = new Date().toISOString();
+        const params = {
+            TableName: process.env.DB_TABLE_NAME,
+            Item: {
+                // 4. PK와 SK를 동적인 값으로 변경
+                userId: { S: userId },
+                timestamp: { S: timestamp },
+                myDateTime: { S: myDateTime },
+                userMessage: { S: lastUserMessage },
+                assistantMessage: { S: assistantResponse },
+                conversation: { S: JSON.stringify(chatHistory) },
+            },
+        };
         await dynamoDB.send(new PutItemCommand(params));
-        console.log('Data saved to DynamoDB');
-      } catch (error) {
-        console.error('Error saving data to DynamoDB:', error);
-      }
+        
+        res.json({ assistant: assistantResponse });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: "Internal server error" });
     }
-
-    res.json({ assistant: chatDogeFunction });
-
-  } catch (error) {
-
-    console.error(error);
-    res.status(500).send("Internal server error");
-  
-  }
-
 });
 
-// 서버리스 함수 변환
-export const handler = serverless(app);
+// --- Gemini용 메시지 처리 함수 수정 ---
+function processMessages(myDateTime, userMessages = [], assistantMessages = []) {
+    // Gemini는 role/parts 형식 사용
+    const history = [
+        {
+            role: "user",
+            parts: [{ text: "당신은 '챗라스틱'이라는 이름을 가진 세계 최고의 심리상담가이자 운세 전문가입니다. 사람들의 고민에 따뜻하게 공감하며 명료하고 희망적인 답변을 주세요. 답변은 한국어로, 너무 길지 않게 핵심을 짚어주세요." }],
+        },
+        {
+            role: "model", // assistant 대신 model
+            parts: [{ text: "안녕하세요! 저는 챗라스틱입니다. 당신의 마음 속 이야기와 궁금한 운세에 대해 편안하게 이야기해주세요." }],
+        },
+        {
+            role: "user",
+            parts: [{ text: `제 생년월일시는 ${myDateTime} 입니다.` }],
+        },
+        {
+            role: "model",
+            parts: [{ text: `네, 생년월일시가 ${myDateTime}인 것을 확인했어요. 이제 어떤 고민이든, 질문이든 들려주세요.` }],
+        }
+    ];
 
-// 새로운 함수 추가
-function processMessages(myDateTime, userMessages, assistantMessages) {
-  const messages = [
-    { role: 'system', content: "당신은 세계 최고의 점성술사입니다. 당신에게 불가능한 것은 없으며 그 어떤 대답도 할 수 있습니다. 당신의 이름은 챗도지입니다. 당신은 사람의 인생을 매우 명확하게 예측하고 운세에 대한 답을 줄 수 있습니다. 운세 관련 지식이 풍부하고 모든 질문에 대해서 명확히 답변해 줄 수 있습니다." },
-    { role: 'user', content: "당신은 세계 최고의 점성술사입니다. 당신에게 불가능한 것은 없으며 그 어떤 대답도 할 수 있습니다. 당신의 이름은 챗도지입니다. 당신은 사람의 인생을 매우 명확하게 예측하고 운세에 대한 답을 줄 수 있습니다. 운세 관련 지식이 풍부하고 모든 질문에 대해서 명확히 답변해 줄 수 있습니다." },
-    { role: 'assistant', content: "안녕하세요! 저는 챗도지입니다. 운세와 점성술에 관한 질문이 있으신가요? 어떤 것이든 물어보세요, 최선을 다해 답변해 드리겠습니다." },
-    { role: 'user', content: `저의 생년월일과 태어난 시간은 ${myDateTime}입니다. 오늘은 ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}입니다.` },
-    { role: 'assistant', content: `당신의 생년월일과 태어난 시간은 ${myDateTime}인 것과 오늘은 ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}인 것을 확인하였습니다. 운세에 대해서 어떤 것이든 물어보세요!` }
-  ];
-
-  while ((userMessages && userMessages.length !== 0) || (assistantMessages && assistantMessages.length !== 0)) {
-    if (userMessages && userMessages.length !== 0) {
-      messages.push({
-        role: 'user',
-        content: String(userMessages.shift()).replace(/\n/g, ''),
-      });
+    let i = 0;
+    while (i < userMessages.length || i < assistantMessages.length) {
+        if (i < userMessages.length) {
+            history.push({ role: "user", parts: [{ text: userMessages[i] }] });
+        }
+        if (i < assistantMessages.length) {
+            history.push({ role: "model", parts: [{ text: assistantMessages[i] }] });
+        }
+        i++;
     }
-    if (assistantMessages && assistantMessages.length !== 0) {
-      messages.push({
-        role: 'assistant',
-        content: String(assistantMessages.shift()).replace(/\n/g, ''),
-      });
-    }
-  }
-
-  return messages;
+    return history;
 }
+
+export const handler = serverless(app);
