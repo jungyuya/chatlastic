@@ -1,4 +1,3 @@
-// index.js (수정된 최종 버전)
 import express from 'express';
 import cors from 'cors';
 import serverless from 'serverless-http';
@@ -28,7 +27,7 @@ app.post('/chat', async function (req, res) {
         }
 
         const chatHistory = processMessages(myDateTime, userMessages, assistantMessages);
-        
+
         // --- Gemini 로직 ---
         const chat = model.startChat({
             history: chatHistory.slice(0, -1), // 마지막 사용자 메시지를 제외하고 히스토리로 전달
@@ -36,7 +35,7 @@ app.post('/chat', async function (req, res) {
                 maxOutputTokens: 1000,
             },
         });
-        
+
         const lastUserMessage = chatHistory[chatHistory.length - 1].parts[0].text;
         const result = await chat.sendMessage(lastUserMessage);
         const response = result.response;
@@ -57,7 +56,7 @@ app.post('/chat', async function (req, res) {
             },
         };
         await dynamoDB.send(new PutItemCommand(params));
-        
+
         res.json({ assistant: assistantResponse });
 
     } catch (error) {

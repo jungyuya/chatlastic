@@ -1,0 +1,97 @@
+<script>
+    const chatBox = document.querySelector('.chat-box');
+    let userMessages = [];
+    let assistantMessages = [];
+    let myDateTime = '';
+    let userId = ''; // userId 변수 추가
+
+    // --- 추가된 부분: 사용자 ID 관리 ---
+    function getOrCreateUserId() {
+        let storedUserId = localStorage.getItem('chatbotUserId');
+        if (!storedUserId) {
+            // 최신 브라우저에서 지원하는 암호학적으로 안전한 UUID 생성
+            storedUserId = crypto.randomUUID(); 
+            localStorage.setItem('chatbotUserId', storedUserId);
+        }
+        return storedUserId;
+    }
+    // ------------------------------------
+
+    function start() {
+        const date = document.getElementById('date').value;
+        const hour = document.getElementById('hour').value;
+        if (date === '') {
+            alert('생년월일을 입력해주세요.');
+            return;
+        }
+        myDateTime = date + " " + hour + "시"; // 시간 단위를 명확하게 추가
+
+        // 페이지가 시작될 때 userId를 가져오거나 생성합니다.
+        userId = getOrCreateUserId(); 
+
+        document.getElementById("intro").style.display = "none";
+        document.getElementById("chat").style.display = "block";
+    }
+
+    async function sendMessage() {
+        const chatInput = document.querySelector('.chat-input input');
+        if (chatInput.value.trim() === "") return; // 빈 메시지 전송 방지
+
+        const userMessageText = chatInput.value;
+        const chatMessage = document.createElement('div');
+        chatMessage.classList.add('chat-message');
+        chatMessage.innerHTML = `<p>${userMessageText}</p>`;
+        chatBox.appendChild(chatMessage);
+        
+        // 스크롤을 항상 아래로 이동
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        userMessages.push(userMessageText);
+        chatInput.value = '';
+        document.getElementById('loader').style.display = "block";
+
+        try {
+            // 🚨 중요: 이 URL은 아래 IaC 배포 후 생성된 실제 주소로 변경해야 합니다.
+            const response = await fetch('YOUR_API_GATEWAY_URL/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    userId: userId, // ⭐️ 수정: userId를 요청에 포함
+                    myDateTime: myDateTime,
+                    userMessages: userMessages,
+                    assistantMessages: assistantMessages
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            assistantMessages.push(data.assistant);
+
+            const astrologerMessage = document.createElement('div');
+            astrologerMessage.classList.add('chat-message');
+            astrologerMessage.innerHTML = `<p class='assistant'>${data.assistant}</p>`;
+            chatBox.appendChild(astrologerMessage);
+
+        } catch (error) {
+            console.error('Error sending message:', error);
+            const errorMessage = document.createElement('div');
+            errorMessage.classList.add('chat-message');
+            errorMessage.innerHTML = `<p class='assistant' style='color: red;'>메시지 전송에 실패했습니다. 잠시 후 다시 시도해주세요.</p>`;
+            chatBox.appendChild(errorMessage);
+        } finally {
+            document.getElementById('loader').style.display = "none";
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+    }
+
+    function handleKeyPress(event) {
+        if (event.key === 'Enter') {
+            sendMessage();
+        }
+    }
+</script>

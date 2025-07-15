@@ -1,0 +1,61 @@
+# serverless.yml (chatlastic 버전)
+
+# ⭐️ 수정: 서비스 이름을 chatlastic으로 변경
+service: chatlastic-service
+
+frameworkVersion: '3'
+
+# ⭐️ 추가: .env 파일을 사용하기 위한 플러그인 설정
+plugins:
+  - serverless-dotenv-plugin
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ap-northeast-2
+  stage: prod
+
+  # 환경 변수 설정. serverless-dotenv-plugin이 .env 파일에서 값을 자동으로 찾아 주입합니다.
+  environment:
+    DB_TABLE_NAME: ${self:custom.dynamoDbTableName}
+    AWS_REGION: ${self:provider.region}
+    # GEMINI_API_KEY는 플러그인이 자동으로 설정해주므로 여기서 직접 참조할 필요가 없습니다.
+
+  iam:
+    role:
+      statements:
+        - Effect: "Allow"
+          Action:
+            - "dynamodb:PutItem"
+          Resource: "arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.dynamoDbTableName}"
+
+custom:
+  # ⭐️ 수정: 테이블 이름에 chatlastic 반영
+  dynamoDbTableName: chatlastic-history-${self:provider.stage}
+
+functions:
+  main:
+    handler: index.handler
+    events:
+      - http:
+          path: /chat
+          method: post
+          cors: true
+
+resources:
+  Resources:
+    ChatHistoryTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.dynamoDbTableName}
+        AttributeDefinitions:
+          - AttributeName: userId
+            AttributeType: S
+          - AttributeName: timestamp
+            AttributeType: S
+        KeySchema:
+          - AttributeName: userId
+            KeyType: HASH
+          - AttributeName: timestamp
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
