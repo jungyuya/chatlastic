@@ -8,7 +8,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const app = express();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 const dynamoDB = new DynamoDBClient({ region: process.env.AWS_REGION });
 
@@ -18,14 +18,12 @@ app.use(express.json());
 // --- 메인 기능 ---
 app.post('/chat', async function (req, res) {
     try {
-        // 요청 본문에서 userId, userName, myDateTime, userMessages, assistantMessages 추출
         const { userId, userName, myDateTime, userMessages, assistantMessages } = req.body;
 
         if (!userId || !myDateTime) {
             return res.status(400).send("userId and myDateTime are required");
         }
 
-        // processMessages 함수에 userName을 올바르게 전달
         const chatHistory = processMessages(myDateTime, userName, userMessages, assistantMessages);
 
         // --- Gemini 로직 ---
@@ -49,7 +47,7 @@ app.post('/chat', async function (req, res) {
                 userId: { S: userId },
                 timestamp: { S: timestamp },
                 myDateTime: { S: myDateTime },
-                userName: { S: userName || '익명' }, // userName이 없을 경우 '익명'으로 저장
+                userName: { S: userName || '익명' },
                 userMessage: { S: lastUserMessage },
                 assistantMessage: { S: assistantResponse },
                 conversation: { S: JSON.stringify(chatHistory) },
@@ -71,7 +69,6 @@ function processMessages(myDateTime, userName, userMessages = [], assistantMessa
         {
             role: "user",
             parts: [{
-                // 여기서부터 긴 프롬프트 문자열이 시작됩니다. 이 부분을 특히 주의 깊게 확인하세요.
                 text: `당신은 '챗라스틱'이라는 이름을 가진 세계 최고의 심리상담가이자 운세 전문가입니다.
 
 ## 역할 및 말투 지침:
@@ -85,13 +82,13 @@ function processMessages(myDateTime, userName, userMessages = [], assistantMessa
     * 사용자의 생년월일시(${myDateTime}으로 전달됨)를 바탕으로 사주, 명리학, 타로 등 동서양의 운세 철학을 아우르는 지식으로 운세를 해석하고 조언을 제공하세요.
     * 운세 해석은 단순히 길흉을 넘어, 사용자에게 **현실적인 조언과 긍정적인 방향성**을 제시하는 데 집중하세요.
     * 운명은 개척할 수 있다는 희망적인 메시지를 담아, 사용자가 능동적으로 삶을 살아갈 용기를 북돋아 주세요.
-    * 특정 질문에 대한 운세 정보가 부족하더라도 '추가 정보가 있다면 더 자세히 봐드릴 수 있어요.' 와 같이 정중하게 필요한 정보를 요청하되, 주어진 정보 내에서 유추할 수 있는 선에서 최선을 다해 답변하세요.
+    * **특히, 운세 정보가 부족하더라도 먼저 현재 주어진 정보(생년월일)만으로 최대한 구체적이고 긍정적인 운세 해석과 조언을 제공하세요. 그 후에 '더욱 정확한 해석을 위해 출생 시간(시) 정보가 있다면 알려주세요.' 와 같이 추가 정보의 필요성을 부드럽게 언급하세요. 다만, 되도록이면 사용자가에게 굳이 출생 시간에 대한 언급을 먼저 하지 않도록 하십시오. **
 8.  **언어**: 모든 답변은 한국어로 제공합니다.
 
 당신의 목표는 사용자가 자신의 고민을 털어놓고 명확한 해답과 마음의 위안을 얻을 수 있도록 돕는 것입니다.
 
 사용자의 이름은 **${userName}** 입니다. 상담 시 이 이름을 사용하여 더욱 친근하게 소통해주세요.`
-            }], // 이 백틱(`)과 `}],` 사이에 다른 문자가 없는지 확인하세요.
+            }],
         },
         {
             role: "model",
