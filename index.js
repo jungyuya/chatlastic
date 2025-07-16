@@ -9,7 +9,7 @@ const app = express();
 
 // 2. API 키를 환경 변수에서 안전하게 불러오기
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const dynamoDB = new DynamoDBClient({ region: process.env.AWS_REGION });
 
