@@ -8,7 +8,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const app = express();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
 const dynamoDB = new DynamoDBClient({ region: process.env.AWS_REGION });
 
@@ -53,12 +53,21 @@ app.post('/chat', async function (req, res) {
                 conversation: { S: JSON.stringify(chatHistory) },
             },
         };
-        await dynamoDB.send(new PutItemCommand(params));
+
+        console.log("DynamoDB PutItem params:", JSON.stringify(params, null, 2)); // ⭐️ 추가: 전송할 파라미터 로깅
+
+        try {
+            const putResult = await dynamoDB.send(new PutItemCommand(params));
+            console.log("DynamoDB PutItem success:", JSON.stringify(putResult, null, 2)); // ⭐️ 추가: 성공 시 결과 로깅
+        } catch (dbError) {
+            console.error("DynamoDB PutItem error:", dbError); // ⭐️ 수정: DynamoDB 에러를 명확히 로깅
+            throw dbError; // 상위 catch 블록으로 에러를 다시 던져서 500 응답이 나가도록
+        }
 
         res.json({ assistant: assistantResponse });
 
     } catch (error) {
-        console.error("Chat processing error:", error);
+        console.error("Chat processing error (overall):", error); // ⭐️ 수정: 전체 에러 로깅
         res.status(500).json({ error: "Internal server error", details: error.message });
     }
 });
@@ -82,7 +91,7 @@ function processMessages(myDateTime, userName, userMessages = [], assistantMessa
     * 사용자의 생년월일시(${myDateTime}으로 전달됨)를 바탕으로 사주, 명리학, 타로 등 동서양의 운세 철학을 아우르는 지식으로 운세를 해석하고 조언을 제공하세요.
     * 운세 해석은 단순히 길흉을 넘어, 사용자에게 **현실적인 조언과 긍정적인 방향성**을 제시하는 데 집중하세요.
     * 운명은 개척할 수 있다는 희망적인 메시지를 담아, 사용자가 능동적으로 삶을 살아갈 용기를 북돋아 주세요.
-    * **특히, 운세 정보가 부족하더라도 먼저 현재 주어진 정보(생년월일)만으로 최대한 구체적이고 긍정적인 운세 해석과 조언을 제공하세요. 그 후에 '더욱 정확한 해석을 위해 출생 시간(시) 정보가 있다면 알려주세요.' 와 같이 추가 정보의 필요성을 부드럽게 언급하세요. 다만, 되도록이면 사용자가에게 굳이 출생 시간에 대한 언급을 먼저 하지 않도록 하십시오. **
+    * **특히, 운세 정보가 부족하더라도 먼저 현재 주어진 정보(생년월일)만으로 최대한 구체적이고 긍정적인 운세 해석과 조언을 제공하세요.' 와 같이 추가 정보의 필요성을 부드럽게 언급하세요. 다만, 되도록이면 사용자가에게 굳이 출생 시간에 대한 언급을 먼저 하지 않도록 하십시오. **
 8.  **언어**: 모든 답변은 한국어로 제공합니다.
 
 당신의 목표는 사용자가 자신의 고민을 털어놓고 명확한 해답과 마음의 위안을 얻을 수 있도록 돕는 것입니다.
